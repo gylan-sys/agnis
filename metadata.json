@@ -1,0 +1,6 @@
+{
+  "name": "AGNIS",
+  "description": "A refined household finance and planning application for the whole family.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["auth", "database", "storage"]
+}

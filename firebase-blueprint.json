@@ -1,0 +1,164 @@
+{
+  "entities": {
+    "Household": {
+      "title": "Household",
+      "description": "A group representing a family or household sharing finance data.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the household" },
+        "ownerId": { "type": "string", "description": "UID of the person who created the household" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerId", "createdAt"]
+    },
+    "Member": {
+      "title": "Member",
+      "description": "A member of a household.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["owner", "admin", "member"] },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "role", "joinedAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "An income or expense record.",
+      "type": "object",
+      "properties": {
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "category": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "description": { "type": "string" },
+        "receiptUrl": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["amount", "type", "category", "date", "createdBy", "createdAt"]
+    },
+    "Budget": {
+      "title": "Budget",
+      "description": "Monthly budget limit for a category.",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string" },
+        "limit": { "type": "number" },
+        "period": { "type": "string", "description": "YYYY-MM format" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["category", "limit", "period"]
+    },
+    "Bill": {
+      "title": "Bill",
+      "description": "A recurring or one-time bill reminder.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "dueDate": { "type": "string", "format": "date" },
+        "status": { "type": "string", "enum": ["unpaid", "paid"] },
+        "category": { "type": "string" },
+        "reminderDays": { "type": "number" }
+      },
+      "required": ["title", "amount", "dueDate", "status"]
+    },
+    "PlanningItem": {
+      "title": "Planning Item",
+      "description": "A specific planned item or expense for the month.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "amount": { "type": "number" },
+        "group": { "type": "string", "description": "e.g., Kamar Mandi, Dapur" },
+        "period": { "type": "string", "description": "YYYY-MM" },
+        "isBought": { "type": "boolean" },
+        "productUrl": { "type": "string", "description": "Link to the product" },
+        "storeNote": { "type": "string", "description": "Recommended store or location" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "amount", "group", "period", "isBought"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "A message sent in the household chat.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "content", "timestamp"]
+    },
+    "TypingStatus": {
+      "title": "Typing Status",
+      "description": "Real-time typing indicator for a member.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "isTyping": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "isTyping", "updatedAt"]
+    },
+    "GalleryItem": {
+      "title": "Gallery Item",
+      "description": "A photo or video documentation of the family.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "url": { "type": "string" },
+        "type": { "type": "string", "enum": ["image", "video"] },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "url", "type", "userId", "userName", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/households/{householdId}": {
+      "schema": "Household",
+      "description": "Root household document"
+    },
+    "/households/{householdId}/members/{userId}": {
+      "schema": "Member",
+      "description": "Family members in this household"
+    },
+    "/households/{householdId}/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Financial transactions"
+    },
+    "/households/{householdId}/budgets/{budgetId}": {
+      "schema": "Budget",
+      "description": "Monthly category budgets"
+    },
+    "/households/{householdId}/bills/{billId}": {
+      "schema": "Bill",
+      "description": "Bills and reminders"
+    },
+    "/households/{householdId}/planning/{itemId}": {
+      "schema": "PlanningItem",
+      "description": "Planned shopping list items"
+    },
+    "/households/{householdId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Real-time chat messages between members"
+    },
+    "/households/{householdId}/typing/{userId}": {
+      "schema": "TypingStatus",
+      "description": "Typing indicators for members"
+    },
+    "/households/{householdId}/gallery/{itemId}": {
+      "schema": "GalleryItem",
+      "description": "Family photo and video documentation"
+    }
+  }
+}

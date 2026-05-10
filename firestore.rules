@@ -1,0 +1,177 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Primitives ---
+    function isSignedIn() { return request.auth != null; }
+    function isEmailVerified() { return request.auth.token.email_verified == true; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function currentUser() { return request.auth.uid; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    
+    // --- Master Gate (Pillar 1) ---
+    // A member is someone who has a doc in the members subcollection OR is the owner of the household.
+    function isMember(hId) {
+      return isSignedIn() && isEmailVerified() && (
+        exists(/databases/$(database)/documents/households/$(hId)/members/$(currentUser())) ||
+        get(/databases/$(database)/documents/households/$(hId)).data.ownerId == currentUser()
+      );
+    }
+
+    function isOwner(hId) {
+      return isSignedIn() && isEmailVerified() && get(/databases/$(database)/documents/households/$(hId)).data.ownerId == currentUser();
+    }
+
+    // --- Validation Blueprints (Pillar 2) ---
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['amount', 'type', 'category', 'date', 'description', 'createdBy', 'createdAt'])
+        && data.amount is number && data.amount > 0
+        && data.type in ['income', 'expense']
+        && data.category is string && data.category.size() < 100
+        && data.date is string && data.date.size() == 10
+        && data.description is string && data.description.size() <= 200
+        && data.createdBy == currentUser()
+        && (data.get('receiptUrl', '') is string);
+    }
+
+    function isValidBudget(data) {
+      return data.keys().hasAll(['category', 'limit', 'period', 'updatedAt'])
+        && data.category is string
+        && data.limit is number
+        && data.period.matches('^\\d{4}-\\d{2}$')
+        && data.updatedAt is string;
+    }
+
+    function isValidBill(data) {
+      return data.keys().hasAll(['title', 'amount', 'dueDate', 'status'])
+        && data.title is string && data.title.size() <= 100
+        && data.amount is number
+        && data.dueDate is string
+        && data.status in ['paid', 'unpaid'];
+    }
+
+    function isValidPlanningItem(data) {
+      return data.keys().hasAll(['name', 'amount', 'group', 'period', 'isBought', 'createdAt'])
+        && data.name is string && data.name.size() <= 100
+        && data.amount is number
+        && data.group is string
+        && data.period.matches('^\\d{4}-\\d{2}$')
+        && data.isBought is bool
+        && (data.get('productUrl', '') is string)
+        && (data.get('storeNote', '') is string);
+    }
+
+    function isValidMessage(data) {
+       return data.keys().hasAll(['userId', 'userName', 'content', 'timestamp'])
+         && data.userId == currentUser()
+         && data.userName is string && data.userName.size() <= 100
+         && data.content is string && data.content.size() <= 1000
+         && data.timestamp is string;
+    }
+
+    function isValidTypingStatus(data) {
+       return data.keys().hasAll(['userId', 'userName', 'isTyping', 'updatedAt'])
+         && data.userId == currentUser()
+         && data.userName is string
+         && data.isTyping is bool
+         && data.updatedAt is string;
+    }
+
+    function isValidGalleryItem(data) {
+      return data.keys().hasAll(['title', 'url', 'type', 'userId', 'userName', 'timestamp'])
+        && data.title is string && data.title.size() <= 100
+        && data.url is string && data.url.size() <= 2000000
+        && data.type in ['image', 'video']
+        && data.userId == currentUser()
+        && (data.get('description', '') is string && data.get('description', '').size() <= 2000);
+    }
+
+    // --- Path Specific Rules ---
+    
+    match /households/{hId} {
+      // Identity Poisoning Guard (Pillar 3)
+      allow get: if isValidId(hId) && isMember(hId);
+      allow create: if isSignedIn() && isEmailVerified() 
+        && incoming().ownerId == currentUser()
+        && incoming().memberIds.size() == 1
+        && incoming().memberIds[0] == currentUser();
+      
+      // Tiered Identity Logic (Pillar 4)
+      allow update: if isOwner(hId) && incoming().ownerId == existing().ownerId;
+
+      // Secure List Queries (Pillar 8)
+      // Users can list households they own or are members of.
+      // Note: Collection group queries would need more complex rules.
+      allow list: if isSignedIn() && isEmailVerified(); 
+
+      match /members/{mId} {
+        allow read: if isMember(hId);
+        allow create: if isSignedIn() && (isOwner(hId) || mId == currentUser());
+        allow update, delete: if isOwner(hId) && mId != existing().userId; // Owner can't delete self via member doc
+      }
+
+      match /transactions/{tId} {
+        allow read, list: if isMember(hId);
+        allow create: if isMember(hId) && isValidTransaction(incoming());
+        allow update: if isMember(hId) && (existing().createdBy == currentUser() || isOwner(hId)) 
+          && isValidTransaction(incoming())
+          && incoming().createdBy == existing().createdBy; // Immutable creator
+        allow delete: if isOwner(hId) || (isMember(hId) && existing().createdBy == currentUser());
+      }
+
+      match /budgets/{bId} {
+        allow read, list: if isMember(hId);
+        allow create, update: if isMember(hId) && isValidBudget(incoming());
+        allow delete: if isOwner(hId);
+      }
+
+      match /bills/{bId} {
+        allow read, list: if isMember(hId);
+        allow create: if isMember(hId) && isValidBill(incoming());
+        allow update: if isMember(hId) && (
+          // Action: Mark as Paid
+          (incoming().diff(existing()).affectedKeys().hasOnly(['status'])) ||
+          // Action: Edit Bill
+          isValidBill(incoming())
+        );
+        allow delete: if isMember(hId);
+      }
+
+      // Planning (Pillar 2, 4)
+      match /planning/{itemId} {
+        allow read, list: if isMember(hId);
+        allow create: if isMember(hId) && isValidPlanningItem(incoming());
+        allow update: if isMember(hId) && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['isBought']) ||
+          isValidPlanningItem(incoming())
+        );
+        allow delete: if isMember(hId);
+      }
+
+      match /messages/{msgId} {
+        allow read, list: if isMember(hId);
+        allow create: if isMember(hId) && isValidMessage(incoming());
+        allow delete: if isOwner(hId) || (isMember(hId) && existing().userId == currentUser());
+      }
+
+      match /typing/{userId} {
+        allow read, list: if isMember(hId);
+        allow create, update: if isMember(hId) && userId == currentUser() && isValidTypingStatus(incoming());
+        allow delete: if isMember(hId) && userId == currentUser();
+      }
+
+      match /gallery/{itemId} {
+        allow read, list: if isMember(hId);
+        allow create: if isMember(hId) && isValidGalleryItem(incoming());
+        allow update: if isMember(hId) && (existing().userId == currentUser() || isOwner(hId)) && isValidGalleryItem(incoming());
+        allow delete: if isMember(hId) && (existing().userId == currentUser() || isOwner(hId));
+      }
+    }
+  }
+}
