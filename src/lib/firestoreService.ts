@@ -27,6 +27,23 @@ export const authService = {
     localStorage.removeItem('user');
     window.location.reload();
   },
+  async getProfile() {
+    const res = await fetch('/api/auth/me');
+    if (!res.ok) return null;
+    const data = await res.json();
+    currentUser = data;
+    localStorage.setItem('user', JSON.stringify(data));
+    return data;
+  },
+  async updateSettings(settings: { loginBackground?: string, appBackground?: string, displayName?: string }) {
+    const res = await fetch('/api/auth/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+    if (!res.ok) throw new Error('Gagal memperbarui pengaturan');
+    return await this.getProfile();
+  },
   onAuthStateChanged(callback: (user: any) => void) {
     callback(currentUser);
     return () => {};

@@ -107,8 +107,13 @@ db.exec(`
     id TEXT PRIMARY KEY,
     username TEXT UNIQUE,
     displayName TEXT,
-    password TEXT
+    password TEXT,
+    loginBackground TEXT,
+    appBackground TEXT
   );
+
+  INSERT OR IGNORE INTO users (id, username, displayName, password) 
+  VALUES ('u_admin', 'admin', 'Administrator', 'admin');
 `);
 
 async function startServer() {
@@ -146,7 +151,7 @@ async function startServer() {
       user = { id, username, displayName: username };
     } else {
       if (user.password !== password) {
-        return res.status(401).json({ error: "Password salah" });
+        return res.status(401).json({ error: "Password salah. Jika Anda baru, gunakan username lain." });
       }
     }
 
@@ -160,7 +165,20 @@ async function startServer() {
   });
 
   app.get("/api/auth/me", authMiddleware, (req: any, res) => {
-    res.json(req.user);
+    const user = db.prepare("SELECT id, username, displayName, loginBackground, appBackground FROM users WHERE id = ?").get(req.user.id);
+    res.json(user);
+  });
+
+  app.patch("/api/auth/settings", authMiddleware, (req: any, res) => {
+    const { loginBackground, appBackground, displayName } = req.body;
+    db.prepare(`
+      UPDATE users SET 
+        loginBackground = COALESCE(?, loginBackground),
+        appBackground = COALESCE(?, appBackground),
+        displayName = COALESCE(?, displayName)
+      WHERE id = ?
+    `).run(loginBackground, appBackground, displayName, req.user.id);
+    res.json({ success: true });
   });
 
   app.post("/api/auth/logout", (req, res) => {

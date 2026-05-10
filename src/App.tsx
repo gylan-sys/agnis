@@ -9,36 +9,53 @@ import Bills from './components/Bills';
 import Planning from './components/Planning';
 import Chat from './components/Chat';
 import Gallery from './components/Gallery';
-import { LayoutDashboard, Receipt, WalletCards, BellRing, LogOut, ChevronRight, ClipboardList, MessageSquare, Image as ImageIcon } from 'lucide-react';
+import Settings from './components/Settings';
+import { LayoutDashboard, Receipt, WalletCards, BellRing, LogOut, ChevronRight, ClipboardList, MessageSquare, Image as ImageIcon, Settings as SettingsIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [householdId, setHouseholdId] = useState<string | null>(localStorage.getItem('householdId'));
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'budgets' | 'bills' | 'planning' | 'chat' | 'gallery'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'budgets' | 'bills' | 'planning' | 'chat' | 'gallery' | 'settings'>('dashboard');
+
+  const checkAuth = async () => {
+    const u = await authService.getProfile();
+    setUser(u);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const unsubscribe = authService.onAuthStateChanged((u) => {
-      setUser(u);
-      setLoading(false);
-    });
-    return () => unsubscribe();
+    checkAuth();
   }, []);
+
+  const handleLogin = async (creds: any) => {
+    const u = await authService.login(creds);
+    setUser(u);
+  };
 
   const handleSelectHousehold = (id: string) => {
     setHouseholdId(id);
     localStorage.setItem('householdId', id);
   };
 
-  if (loading) return <div className="h-screen flex items-center justify-center font-sans">Memuat...</div>;
+  if (loading) return <div className="h-screen flex items-center justify-center font-sans font-black bg-gray-900 text-white animate-pulse uppercase tracking-[0.3em]">Loading System...</div>;
 
-  if (!user) return <Login onLogin={(creds: any) => authService.login(creds)} />;
+  if (!user) return <Login onLogin={handleLogin} background={localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!).loginBackground : undefined} />;
 
   if (!householdId) return <HouseholdSetup userId={user.id} onSelect={handleSelectHousehold} />;
 
+  const appBgStyle = user?.appBackground ? {
+    backgroundImage: `linear-gradient(rgba(255,255,255,0.85), rgba(255,255,255,0.95)), url(${user.appBackground})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundAttachment: 'fixed'
+  } : {
+    backgroundColor: '#FDFCFB'
+  };
+
   return (
-    <div className="flex h-screen bg-[#FDFCFB] text-gray-900 font-sans selection:bg-blue-100">
+    <div className="flex h-screen text-gray-900 font-sans selection:bg-blue-100 transition-all duration-1000" style={appBgStyle}>
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex w-72 bg-white border-r border-gray-100 flex-col shadow-[4px_0_24px_rgba(0,0,0,0,02)] z-20">
         <div className="p-10">
@@ -99,6 +116,12 @@ export default function App() {
             onClick={() => setActiveTab('gallery')}
             icon={<ImageIcon size={20} />}
             label="Galeri"
+          />
+          <SidebarItem 
+            active={activeTab === 'settings'} 
+            onClick={() => setActiveTab('settings')}
+            icon={<SettingsIcon size={20} />}
+            label="Pengaturan"
           />
         </nav>
 
@@ -163,6 +186,7 @@ export default function App() {
               {activeTab === 'bills' && <Bills householdId={householdId} />}
               {activeTab === 'chat' && <Chat householdId={householdId} />}
               {activeTab === 'gallery' && <Gallery householdId={householdId} />}
+              {activeTab === 'settings' && <Settings user={user} onUpdate={setUser} />}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -186,16 +210,6 @@ export default function App() {
           icon={<ClipboardList size={20} />} 
         />
         <MobileNavItem 
-          active={activeTab === 'budgets'} 
-          onClick={() => setActiveTab('budgets')} 
-          icon={<WalletCards size={20} />} 
-        />
-        <MobileNavItem 
-          active={activeTab === 'bills'} 
-          onClick={() => setActiveTab('bills')} 
-          icon={<BellRing size={20} />} 
-        />
-        <MobileNavItem 
           active={activeTab === 'chat'} 
           onClick={() => setActiveTab('chat')} 
           icon={<MessageSquare size={20} />} 
@@ -204,6 +218,11 @@ export default function App() {
           active={activeTab === 'gallery'} 
           onClick={() => setActiveTab('gallery')} 
           icon={<ImageIcon size={20} />} 
+        />
+        <MobileNavItem 
+          active={activeTab === 'settings'} 
+          onClick={() => setActiveTab('settings')} 
+          icon={<SettingsIcon size={20} />} 
         />
       </nav>
     </div>
