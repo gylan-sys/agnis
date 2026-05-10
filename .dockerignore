@@ -1,0 +1,10 @@
+node_modules
+dist
+.next
+.git
+.env
+*.db
+*.log
+Dockerfile
+.dockerignore
+package-lock.json
