@@ -5,7 +5,14 @@ import Database from "better-sqlite3";
 import cookieParser from "cookie-parser";
 import { SignJWT, jwtVerify } from "jose";
 
-const db = new Database("family_finance.db");
+import fs from "fs";
+
+const DATA_DIR = path.join(process.cwd(), "data");
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+const db = new Database(path.join(DATA_DIR, "family_finance.db"));
 const SECRET = new TextEncoder().encode("asdf-secret-123");
 
 // Initialize Database
