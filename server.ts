@@ -12,7 +12,14 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-const db = new Database(path.join(DATA_DIR, "family_finance.db"));
+let db: Database.Database;
+try {
+  db = new Database(path.join(DATA_DIR, "family_finance.db"));
+} catch (err: any) {
+  console.error("FAILED TO OPEN DATABASE:", err.message);
+  console.error("Ensuring data directory exists at:", DATA_DIR);
+  process.exit(1);
+}
 const SECRET = new TextEncoder().encode("asdf-secret-123");
 
 // Initialize Database
@@ -127,8 +134,19 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Log all requests
+  app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    next();
+  });
+
   app.use(express.json({ limit: '50mb' }));
   app.use(cookieParser());
+
+  // Health check for API
+  app.get("/api/ping", (req, res) => {
+    res.json({ pong: true, time: new Date().toISOString(), env: process.env.NODE_ENV });
+  });
 
   // Auth Middleware
   const authMiddleware = async (req: any, res: any, next: any) => {
@@ -147,33 +165,53 @@ async function startServer() {
 
   // Auth
   app.post("/api/auth/login", async (req, res) => {
-    const { username, password } = req.body;
-    let user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
-    
-    if (!user) {
-      // Auto-register for now (simple setup)
-      const id = "u_" + Math.random().toString(36).substring(7);
-      db.prepare("INSERT INTO users (id, username, displayName, password) VALUES (?, ?, ?, ?)")
-        .run(id, username, username, password);
-      user = { id, username, displayName: username };
-    } else {
-      if (user.password !== password) {
-        return res.status(401).json({ error: "Password salah. Jika Anda baru, gunakan username lain." });
-      }
-    }
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) return res.status(400).json({ error: "Username and password required" });
 
-    const { password: _, ...userWithoutPassword } = user;
-    const token = await new SignJWT({ ...userWithoutPassword })
-      .setProtectedHeader({ alg: "HS256" })
-      .setExpirationTime("30d")
-      .sign(SECRET);
-    res.cookie("token", token, { httpOnly: true });
-    res.json(userWithoutPassword);
+      let user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
+      
+      if (!user) {
+        // Auto-register for now (simple setup)
+        const id = "u_" + Math.random().toString(36).substring(7);
+        db.prepare("INSERT INTO users (id, username, displayName, password) VALUES (?, ?, ?, ?)")
+          .run(id, username, username, password);
+        user = { id, username, displayName: username };
+      } else {
+        if (user.password !== password) {
+          return res.status(401).json({ error: "Password salah. Jika Anda baru, gunakan username lain." });
+        }
+      }
+
+      const { password: _, ...userWithoutPassword } = user;
+      const token = await new SignJWT({ ...userWithoutPassword })
+        .setProtectedHeader({ alg: "HS256" })
+        .setExpirationTime("30d")
+        .sign(SECRET);
+      
+      res.cookie("token", token, { 
+        httpOnly: true, 
+        secure: req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+      });
+      res.json(userWithoutPassword);
+    } catch (e: any) {
+      console.error("Login error:", e);
+      res.status(500).json({ error: "Internal Server Error: " + e.message });
+    }
   });
 
   app.get("/api/auth/me", authMiddleware, (req: any, res) => {
-    const user = db.prepare("SELECT id, username, displayName, loginBackground, appBackground FROM users WHERE id = ?").get(req.user.id);
-    res.json(user);
+    try {
+      const user = db.prepare("SELECT id, username, displayName, loginBackground, appBackground FROM users WHERE id = ?").get(req.user.id) as any;
+      if (!user) return res.status(401).json({ error: "User not found" });
+      res.json(user);
+    } catch (e: any) {
+      console.error("Auth me error:", e);
+      res.status(500).json({ error: e.message });
+    }
   });
 
   app.patch("/api/auth/settings", authMiddleware, (req: any, res) => {
@@ -189,7 +227,7 @@ async function startServer() {
   });
 
   app.post("/api/auth/logout", (req, res) => {
-    res.clearCookie("token");
+    res.clearCookie("token", { path: '/' });
     res.json({ success: true });
   });
 
@@ -376,6 +414,12 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // 404 for API
+  app.all("/api/*", (req: any, res) => {
+    console.warn(`404 API Route: ${req.method} ${req.url}`);
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -385,6 +429,9 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
+    if (!fs.existsSync(distPath)) {
+      console.error("FATAL: 'dist' folder not found! Build the frontend using 'npm run build' first.");
+    }
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
@@ -392,7 +439,9 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server is LIVE on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Data Directory: ${DATA_DIR}`);
   });
 }
 

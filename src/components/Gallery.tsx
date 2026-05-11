@@ -395,17 +395,32 @@ export default function Gallery({ householdId }: { householdId: string }) {
                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Memproses...</span>
                       </>
                     ) : newItem.url ? (
-                      <>
-                        <div className="w-10 h-10 bg-emerald-500 text-white rounded-full flex items-center justify-center">
-                          <ImageIcon size={20} />
+                      <div className="relative w-full h-full group/preview">
+                        {newItem.type === 'image' ? (
+                          <img src={newItem.url} className="w-full h-full object-cover rounded-[22px]" alt="Preview" />
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900 rounded-[22px]">
+                            <Video size={32} className="text-white/20" />
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/preview:opacity-100 transition-opacity flex items-center justify-center rounded-[22px]">
+                          <button 
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setNewItem({ ...newItem, url: '' });
+                            }}
+                            className="bg-white text-rose-500 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl"
+                          >
+                            Hapus Pilihan
+                          </button>
                         </div>
-                        <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Media Siap Diupload</span>
-                      </>
+                      </div>
                     ) : (
                       <>
                         <Upload size={24} className="text-gray-300" />
                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Klik untuk Pilih File</span>
-                        <span className="text-[8px] font-medium text-gray-300 uppercase">Maksimal 1MB (Utuk Video/Foto HD)</span>
+                        <span className="text-[8px] font-medium text-gray-300 uppercase">Maksimal 1MB (Untuk Video/Foto)</span>
                       </>
                     )}
                   </div>

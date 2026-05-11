@@ -41,5 +41,5 @@ COPY --from=builder /app/server.ts ./
 # Expose port
 EXPOSE 3000
 
-# Start the application using native TypeScript support in Node 22
-CMD ["node", "server.ts"]
+# Start the application
+CMD ["npm", "start"]

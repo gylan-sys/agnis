@@ -20,13 +20,22 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'budgets' | 'bills' | 'planning' | 'chat' | 'gallery' | 'settings'>('dashboard');
 
   const checkAuth = async () => {
-    const u = await authService.getProfile();
-    setUser(u);
-    setLoading(false);
+    try {
+      const u = await authService.getProfile();
+      setUser(u);
+    } catch (e) {
+      console.error("Initialization error:", e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     checkAuth();
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 5000); // Fail-safe timeout
+    return () => clearTimeout(timer);
   }, []);
 
   const handleLogin = async (creds: any) => {
@@ -41,7 +50,7 @@ export default function App() {
 
   if (loading) return <div className="h-screen flex items-center justify-center font-sans font-black bg-gray-900 text-white animate-pulse uppercase tracking-[0.3em]">Loading System...</div>;
 
-  if (!user) return <Login onLogin={handleLogin} background={localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!).loginBackground : undefined} />;
+  if (!user) return <Login onLogin={handleLogin} background={localStorage.getItem('lastLoginBg') || undefined} />;
 
   if (!householdId) return <HouseholdSetup userId={user.id} onSelect={handleSelectHousehold} />;
 

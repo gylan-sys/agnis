@@ -58,7 +58,11 @@ export default function Dashboard({ householdId, onNavigate }: { householdId: st
       setLoading(false);
     });
 
+    // Fallback loading state if gallery takes too long or fails
+    const timer = setTimeout(() => setLoading(false), 3000);
+
     return () => {
+      clearTimeout(timer);
       unsubTx();
       unsubPlan();
       unsubGallery();

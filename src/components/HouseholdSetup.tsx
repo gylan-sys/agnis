@@ -9,9 +9,14 @@ export default function HouseholdSetup({ userId, onSelect }: { userId: string, o
 
   useEffect(() => {
     const fetchHouseholds = async () => {
-      const data = await firestoreService.getHouseholds();
-      setHouseholds(data || []);
-      setLoading(false);
+      try {
+        const data = await firestoreService.getHouseholds();
+        setHouseholds(data || []);
+      } catch (e) {
+        console.error("Fetch households error:", e);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchHouseholds();
   }, []);

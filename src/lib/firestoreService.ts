@@ -3,6 +3,37 @@ import { OperationType, FirestoreErrorInfo } from '../types';
 // Mock Auth State for local migration
 let currentUser: any = JSON.parse(localStorage.getItem('user') || 'null');
 
+// Safe JSON parsing helper
+async function safeJson(res: Response) {
+  const text = await res.text();
+  if (!res.ok) {
+    if (res.status === 401) {
+      currentUser = null;
+      localStorage.removeItem('user');
+    }
+    try {
+      const err = JSON.parse(text);
+      throw new Error(err.error || `HTTP ${res.status}: ${res.statusText}`);
+    } catch {
+      const lowerText = text.toLowerCase();
+      if (lowerText.includes("rate exceeded")) throw new Error("Terlalu banyak permintaan. Silakan tunggu sebentar.");
+      if (lowerText.includes("<!doctype") || lowerText.includes("<html")) {
+        throw new Error(`Server Error (${res.status}): API mengembalikan HTML. Pastikan server/proxy terkonfigurasi dengan benar.`);
+      }
+      throw new Error(text.substring(0, 100) || `Error ${res.status}`);
+    }
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    const lowerText = text.toLowerCase();
+    if (lowerText.includes("<!doctype") || lowerText.includes("<html")) {
+      throw new Error("Server mengembalikan halaman HTML (SPA fallback). Pastikan URL API benar.");
+    }
+    throw new Error("Respons server tidak valid (bukan JSON)");
+  }
+}
+
 export const authService = {
   getCurrentUser() {
     return currentUser;
@@ -11,37 +42,45 @@ export const authService = {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(credentials)
+      body: JSON.stringify(credentials),
+      credentials: 'include'
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'Login gagal');
-    }
-    currentUser = await res.json();
+    currentUser = await safeJson(res);
     localStorage.setItem('user', JSON.stringify(currentUser));
+    if (currentUser.loginBackground) localStorage.setItem('lastLoginBg', currentUser.loginBackground);
     return currentUser;
   },
   async logout() {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     currentUser = null;
     localStorage.removeItem('user');
-    window.location.reload();
+    window.location.assign('/'); // Use assign for cleaner redirect
   },
   async getProfile() {
-    const res = await fetch('/api/auth/me');
-    if (!res.ok) return null;
-    const data = await res.json();
+    const res = await fetch('/api/auth/me', { credentials: 'include' });
+    if (!res.ok) {
+      if (res.status === 401) {
+        currentUser = null;
+        localStorage.removeItem('user');
+      }
+      return null;
+    }
+    const data = await safeJson(res);
     currentUser = data;
     localStorage.setItem('user', JSON.stringify(data));
+    if (data.loginBackground) localStorage.setItem('lastLoginBg', data.loginBackground);
     return data;
   },
   async updateSettings(settings: { loginBackground?: string, appBackground?: string, displayName?: string }) {
     const res = await fetch('/api/auth/settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings)
+      body: JSON.stringify(settings),
+      credentials: 'include'
     });
-    if (!res.ok) throw new Error('Gagal memperbarui pengaturan');
+    if (!res.ok) {
+      await safeJson(res); // Will throw appropriate error
+    }
     return await this.getProfile();
   },
   onAuthStateChanged(callback: (user: any) => void) {
@@ -51,8 +90,9 @@ export const authService = {
 };
 
 function handleApiError(error: unknown, operationType: OperationType, path: string | null) {
+  const message = error instanceof Error ? error.message : String(error);
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: message,
     authInfo: {
       userId: currentUser?.id,
       email: currentUser?.email,
@@ -61,15 +101,15 @@ function handleApiError(error: unknown, operationType: OperationType, path: stri
     path
   };
   console.error('API Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  throw new Error(message); // Throw simple message for UI
 }
 
 export const firestoreService = {
   // Household
   async getHouseholds() {
     try {
-      const res = await fetch('/api/households');
-      return await res.json();
+      const res = await fetch('/api/households', { credentials: 'include' });
+      return await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.GET, 'households');
     }
@@ -80,9 +120,10 @@ export const firestoreService = {
       const res = await fetch('/api/households', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
+        body: JSON.stringify({ name }),
+        credentials: 'include'
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       return data.id;
     } catch (e) {
       handleApiError(e, OperationType.WRITE, 'households');
@@ -93,8 +134,8 @@ export const firestoreService = {
   subscribeMembers(householdId: string, callback: (members: any[]) => void) {
     const poll = async () => {
       try {
-        const res = await fetch(`/api/households/${householdId}/members`);
-        const data = await res.json();
+        const res = await fetch(`/api/households/${householdId}/members`, { credentials: 'include' });
+        const data = await safeJson(res);
         if (Array.isArray(data)) callback(data);
         else console.warn('Expected array for members, got:', data);
       } catch (e) { console.error(e); }
@@ -108,8 +149,8 @@ export const firestoreService = {
   subscribeTransactions(householdId: string, callback: (txs: any[]) => void) {
     const poll = async () => {
       try {
-        const res = await fetch(`/api/households/${householdId}/transactions`);
-        const data = await res.json();
+        const res = await fetch(`/api/households/${householdId}/transactions`, { credentials: 'include' });
+        const data = await safeJson(res);
         if (Array.isArray(data)) callback(data);
         else console.warn('Expected array for transactions, got:', data);
       } catch (e) { console.error(e); }
@@ -121,11 +162,13 @@ export const firestoreService = {
 
   async addTransaction(householdId: string, data: any) {
     try {
-      await fetch(`/api/households/${householdId}/transactions`, {
+      const res = await fetch(`/api/households/${householdId}/transactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
+        credentials: 'include'
       });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.WRITE, 'transactions');
     }
@@ -133,7 +176,11 @@ export const firestoreService = {
 
   async deleteTransaction(householdId: string, txId: string) {
     try {
-      await fetch(`/api/households/${householdId}/transactions/${txId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/households/${householdId}/transactions/${txId}`, { 
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.DELETE, 'transactions');
     }
@@ -143,8 +190,8 @@ export const firestoreService = {
   subscribeBudgets(householdId: string, period: string, callback: (budgets: any[]) => void) {
     const poll = async () => {
       try {
-        const res = await fetch(`/api/households/${householdId}/budgets`);
-        const data = await res.json();
+        const res = await fetch(`/api/households/${householdId}/budgets`, { credentials: 'include' });
+        const data = await safeJson(res);
         if (Array.isArray(data)) callback(data);
         else console.warn('Expected array for budgets, got:', data);
       } catch (e) { console.error(e); }
@@ -156,11 +203,13 @@ export const firestoreService = {
 
   async addBudget(householdId: string, data: any) {
     try {
-      await fetch(`/api/households/${householdId}/budgets`, {
+      const res = await fetch(`/api/households/${householdId}/budgets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
+        credentials: 'include'
       });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.WRITE, 'budgets');
     }
@@ -168,7 +217,11 @@ export const firestoreService = {
 
   async deleteBudget(householdId: string, budgetId: string) {
     try {
-      await fetch(`/api/households/${householdId}/budgets/${budgetId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/households/${householdId}/budgets/${budgetId}`, { 
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.DELETE, 'budgets');
     }
@@ -178,8 +231,8 @@ export const firestoreService = {
   subscribeBills(householdId: string, callback: (bills: any[]) => void) {
     const poll = async () => {
       try {
-        const res = await fetch(`/api/households/${householdId}/bills`);
-        const data = await res.json();
+        const res = await fetch(`/api/households/${householdId}/bills`, { credentials: 'include' });
+        const data = await safeJson(res);
         if (Array.isArray(data)) callback(data);
         else console.warn('Expected array for bills, got:', data);
       } catch (e) { console.error(e); }
@@ -191,11 +244,13 @@ export const firestoreService = {
 
   async addBill(householdId: string, data: any) {
     try {
-      await fetch(`/api/households/${householdId}/bills`, {
+      const res = await fetch(`/api/households/${householdId}/bills`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
+        credentials: 'include'
       });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.WRITE, 'bills');
     }
@@ -203,11 +258,13 @@ export const firestoreService = {
 
   async updateBill(householdId: string, billId: string, updates: any) {
     try {
-      await fetch(`/api/households/${householdId}/bills/${billId}`, {
+      const res = await fetch(`/api/households/${householdId}/bills/${billId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
+        body: JSON.stringify(updates),
+        credentials: 'include'
       });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.UPDATE, 'bills');
     }
@@ -215,7 +272,11 @@ export const firestoreService = {
 
   async deleteBill(householdId: string, billId: string) {
     try {
-      await fetch(`/api/households/${householdId}/bills/${billId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/households/${householdId}/bills/${billId}`, { 
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.DELETE, 'bills');
     }
@@ -225,8 +286,8 @@ export const firestoreService = {
   subscribePlanning(householdId: string, period: string, callback: (items: any[]) => void) {
     const poll = async () => {
       try {
-        const res = await fetch(`/api/households/${householdId}/planning`);
-        const data = await res.json();
+        const res = await fetch(`/api/households/${householdId}/planning`, { credentials: 'include' });
+        const data = await safeJson(res);
         if (Array.isArray(data)) callback(data);
         else console.warn('Expected array for planning, got:', data);
       } catch (e) { console.error(e); }
@@ -238,11 +299,13 @@ export const firestoreService = {
 
   async addPlanningItem(householdId: string, data: any) {
     try {
-      await fetch(`/api/households/${householdId}/planning`, {
+      const res = await fetch(`/api/households/${householdId}/planning`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
+        credentials: 'include'
       });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.WRITE, 'planning');
     }
@@ -250,11 +313,13 @@ export const firestoreService = {
 
   async updatePlanningItem(householdId: string, itemId: string, updates: any) {
     try {
-      await fetch(`/api/households/${householdId}/planning/${itemId}`, {
+      const res = await fetch(`/api/households/${householdId}/planning/${itemId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
+        body: JSON.stringify(updates),
+        credentials: 'include'
       });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.UPDATE, 'planning');
     }
@@ -262,7 +327,11 @@ export const firestoreService = {
 
   async deletePlanningItem(householdId: string, itemId: string) {
     try {
-      await fetch(`/api/households/${householdId}/planning/${itemId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/households/${householdId}/planning/${itemId}`, { 
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.DELETE, 'planning');
     }
@@ -272,8 +341,8 @@ export const firestoreService = {
   subscribeMessages(householdId: string, callback: (messages: any[]) => void) {
     const poll = async () => {
       try {
-        const res = await fetch(`/api/households/${householdId}/messages`);
-        const data = await res.json();
+        const res = await fetch(`/api/households/${householdId}/messages`, { credentials: 'include' });
+        const data = await safeJson(res);
         if (Array.isArray(data)) callback(data);
         else console.warn('Expected array for messages, got:', data);
       } catch (e) { console.error(e); }
@@ -285,11 +354,13 @@ export const firestoreService = {
 
   async sendMessage(householdId: string, content: string) {
     try {
-      await fetch(`/api/households/${householdId}/messages`, {
+      const res = await fetch(`/api/households/${householdId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
+        body: JSON.stringify({ content }),
+        credentials: 'include'
       });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.WRITE, 'messages');
     }
@@ -298,8 +369,8 @@ export const firestoreService = {
   subscribeTyping(householdId: string, callback: (typingUsers: any[]) => void) {
     const poll = async () => {
       try {
-        const res = await fetch(`/api/households/${householdId}/typing`);
-        const data = await res.json();
+        const res = await fetch(`/api/households/${householdId}/typing`, { credentials: 'include' });
+        const data = await safeJson(res);
         if (Array.isArray(data)) {
           // Filter out current user's typing status
           const filtered = data.filter((t: any) => t.userId !== currentUser?.id);
@@ -316,11 +387,13 @@ export const firestoreService = {
 
   async updateTypingStatus(householdId: string, isTyping: boolean) {
     try {
-      await fetch(`/api/households/${householdId}/typing`, {
+      const res = await fetch(`/api/households/${householdId}/typing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isTyping })
+        body: JSON.stringify({ isTyping }),
+        credentials: 'include'
       });
+      await safeJson(res);
     } catch (e) { console.error(e); }
   },
 
@@ -328,8 +401,8 @@ export const firestoreService = {
   subscribeGallery(householdId: string, callback: (items: any[]) => void) {
     const poll = async () => {
       try {
-        const res = await fetch(`/api/households/${householdId}/gallery`);
-        const data = await res.json();
+        const res = await fetch(`/api/households/${householdId}/gallery`, { credentials: 'include' });
+        const data = await safeJson(res);
         if (Array.isArray(data)) callback(data);
         else console.warn('Expected array for gallery, got:', data);
       } catch (e) { console.error(e); }
@@ -341,11 +414,13 @@ export const firestoreService = {
 
   async addGalleryItem(householdId: string, item: any) {
     try {
-      await fetch(`/api/households/${householdId}/gallery`, {
+      const res = await fetch(`/api/households/${householdId}/gallery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(item)
+        body: JSON.stringify(item),
+        credentials: 'include'
       });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.WRITE, 'gallery');
     }
@@ -353,7 +428,11 @@ export const firestoreService = {
 
   async deleteGalleryItem(householdId: string, itemId: string) {
     try {
-      await fetch(`/api/households/${householdId}/gallery/${itemId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/households/${householdId}/gallery/${itemId}`, { 
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      await safeJson(res);
     } catch (e) {
       handleApiError(e, OperationType.DELETE, 'gallery');
     }
