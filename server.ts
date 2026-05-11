@@ -7,15 +7,19 @@ import { SignJWT, jwtVerify } from "jose";
 
 import fs from "fs";
 
-import admin from "firebase-admin";
+import * as admin from "firebase-admin";
 
 // Initialize Firebase Admin
 try {
-  admin.initializeApp();
-} catch (e) {
-  console.warn("Firebase Admin failed to init, Google Login might not work on server:", e);
+  if (admin.apps.length === 0) {
+    // We attempt default init which works in some cloud envs, or fails gracefully
+    admin.initializeApp();
+  }
+} catch (e: any) {
+  console.warn("Firebase Admin failed to init:", e.message);
 }
 
+const PORT = 3000;
 const DATA_DIR = path.join(process.cwd(), "data");
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -156,11 +160,11 @@ try {
 } catch (e) {}
 
 async function startServer() {
-  const app = express();
-  const PORT = process.env.PORT || 3000;
+  try {
+    const app = express();
 
-  // Log port configuration
-  console.log(`Configuring server to listen on port: ${PORT}`);
+    // Log port configuration
+    console.log(`Configuring server to listen on port: ${PORT}`);
 
   // Log all requests
   app.use((req, res, next) => {
@@ -550,6 +554,10 @@ async function startServer() {
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`Data Directory: ${DATA_DIR}`);
   });
+  } catch (err: any) {
+    console.error("CRITICAL ERROR:", err.message);
+    process.exit(1);
+  }
 }
 
 startServer();

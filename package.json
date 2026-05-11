@@ -14,7 +14,9 @@
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/animejs": "^3.1.13",
     "@vitejs/plugin-react": "^5.0.4",
+    "animejs": "^4.4.1",
     "better-sqlite3": "^12.9.0",
     "clsx": "^2.1.1",
     "cookie-parser": "^1.4.7",
