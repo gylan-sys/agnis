@@ -7,6 +7,15 @@ import { SignJWT, jwtVerify } from "jose";
 
 import fs from "fs";
 
+import admin from "firebase-admin";
+
+// Initialize Firebase Admin
+try {
+  admin.initializeApp();
+} catch (e) {
+  console.warn("Firebase Admin failed to init, Google Login might not work on server:", e);
+}
+
 const DATA_DIR = path.join(process.cwd(), "data");
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -121,14 +130,30 @@ db.exec(`
     id TEXT PRIMARY KEY,
     username TEXT UNIQUE,
     displayName TEXT,
+    email TEXT UNIQUE,
     password TEXT,
+    role TEXT DEFAULT 'user',
     loginBackground TEXT,
     appBackground TEXT
   );
 
-  INSERT OR IGNORE INTO users (id, username, displayName, password) 
-  VALUES ('u_admin', 'admin', 'Administrator', 'admin');
+  INSERT OR IGNORE INTO users (id, username, displayName, password, role) 
+  VALUES ('u_admin', 'admin', 'Administrator', 'admin', 'admin');
+
+  -- Migration for existing users
+  PRAGMA table_info(users);
 `);
+
+// Explicit migration for sqlite
+try {
+  db.prepare("ALTER TABLE users ADD COLUMN email TEXT UNIQUE").run();
+} catch (e) {}
+try {
+  db.prepare("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'").run();
+} catch (e) {}
+try {
+  db.prepare("UPDATE users SET role = 'admin' WHERE id = 'u_admin' OR username = 'admin'").run();
+} catch (e) {}
 
 async function startServer() {
   const app = express();
@@ -167,15 +192,44 @@ async function startServer() {
   // --- API Routes ---
 
   // Auth
-  app.post("/api/login", async (req, res) => {
+  app.post("/api/auth/google", async (req: any, res: any) => {
     try {
-      const { username, password } = req.body;
-      if (username === 'admin' && password === 'admin') {
-        return res.json({ success: true, token: "sample-token-admin" });
+      const { idToken } = req.body;
+      const decodedToken = await admin.auth().verifyIdToken(idToken);
+      const { uid, email, name, picture } = decodedToken;
+
+      let user = db.prepare("SELECT * FROM users WHERE id = ? OR email = ?").get(uid, email) as any;
+      
+      const isAdminEmail = email === 'gkrismantara@gmail.com';
+
+      if (!user) {
+        db.prepare("INSERT INTO users (id, username, displayName, email, role) VALUES (?, ?, ?, ?, ?)")
+          .run(uid, email?.split('@')[0] || uid, name || "User", email, isAdminEmail ? 'admin' : 'user');
+        user = { id: uid, username: email?.split('@')[0], displayName: name, email, role: isAdminEmail ? 'admin' : 'user' };
+      } else {
+        // Update user if needed (e.g. they were local but now use Google)
+        db.prepare("UPDATE users SET email = ?, role = CASE WHEN ? = 1 THEN 'admin' ELSE role END WHERE id = ?")
+          .run(email, isAdminEmail ? 1 : 0, user.id);
+        user = db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
       }
-      res.status(401).json({ success: false, error: "Invalid credentials" });
+
+      const { password: _, ...userWithoutPassword } = user;
+      const token = await new SignJWT({ ...userWithoutPassword })
+        .setProtectedHeader({ alg: "HS256" })
+        .setExpirationTime("30d")
+        .sign(SECRET);
+
+      res.cookie("token", token, { 
+        httpOnly: true, 
+        secure: req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 30 * 24 * 60 * 60 * 1000
+      });
+      res.json(userWithoutPassword);
     } catch (e: any) {
-      res.status(500).json({ success: false, error: e.message });
+      console.error("Google login error:", e);
+      res.status(500).json({ error: e.message });
     }
   });
 
@@ -191,7 +245,7 @@ async function startServer() {
         const id = "u_" + Math.random().toString(36).substring(7);
         db.prepare("INSERT INTO users (id, username, displayName, password) VALUES (?, ?, ?, ?)")
           .run(id, username, username, password);
-        user = { id, username, displayName: username };
+        user = { id, username, displayName: username, role: 'user' };
       } else {
         if (user.password !== password) {
           return res.status(401).json({ error: "Password salah. Jika Anda baru, gunakan username lain." });
@@ -216,6 +270,44 @@ async function startServer() {
       console.error("Login error:", e);
       res.status(500).json({ error: "Internal Server Error: " + e.message });
     }
+  });
+
+  // Admin Routes
+  app.get("/api/admin/users", authMiddleware, (req: any, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
+    const users = db.prepare("SELECT id, username, displayName, email, role FROM users").all();
+    res.json(users);
+  });
+
+  app.post("/api/admin/users", authMiddleware, (req: any, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
+    const { id, username, displayName, email, password, role } = req.body;
+    
+    if (id) {
+      // Update
+      db.prepare(`
+        UPDATE users SET 
+          username = COALESCE(?, username),
+          displayName = COALESCE(?, displayName),
+          email = COALESCE(?, email),
+          password = COALESCE(?, password),
+          role = COALESCE(?, role)
+        WHERE id = ?
+      `).run(username, displayName, email, password, role, id);
+    } else {
+      // Create
+      const newId = "u_" + Math.random().toString(36).substring(7);
+      db.prepare("INSERT INTO users (id, username, displayName, email, password, role) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(newId, username, displayName, email, password, role || 'user');
+    }
+    res.json({ success: true });
+  });
+
+  app.delete("/api/admin/users/:userId", authMiddleware, (req: any, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
+    if (req.params.userId === req.user.id) return res.status(400).json({ error: "Cannot delete yourself" });
+    db.prepare("DELETE FROM users WHERE id = ?").run(req.params.userId);
+    res.json({ success: true });
   });
 
   app.get("/api/auth/me", authMiddleware, (req: any, res) => {

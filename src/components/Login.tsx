@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { LogIn, Image as ImageIcon } from 'lucide-react';
+import { LogIn, Image as ImageIcon, Chrome } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { authService } from '../lib/firestoreService';
 
 const presets = [
   { name: 'Abstract Blue', url: 'https://images.unsplash.com/photo-1557683316-973673baf926' },
@@ -25,6 +26,19 @@ export default function Login({ onLogin, background }: { onLogin: (credentials: 
       if (username && password) await onLogin({ username, password });
     } catch (err: any) {
       setError(err.message || 'Login gagal. Periksa kembali username dan password Anda.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const u = await authService.loginWithGoogle();
+      onLogin(u);
+    } catch (err: any) {
+      setError(err.message || 'Login Google gagal.');
     } finally {
       setLoading(false);
     }
@@ -78,19 +92,34 @@ export default function Login({ onLogin, background }: { onLogin: (credentials: 
         <h1 className="text-4xl font-black tracking-tighter mb-1 text-white italic">AGNIS</h1>
         <p className="text-gray-300 mb-8 font-medium text-xs tracking-wide">SMART FAMILY FINANCE HUB</p>
         
-        <div className="mb-6 p-3 bg-white/5 rounded-2xl border border-white/5 text-[9px] font-black uppercase tracking-widest text-white/40">
-          Gunakan apa pun untuk mendaftar otomatis <br/> atau login dengan <span className="text-white/60">admin / admin</span>
-        </div>
-        
         {error && (
           <motion.div 
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
-            className="mb-6 p-4 bg-rose-500/20 border border-rose-500/30 rounded-2xl text-rose-300 text-[10px] font-black uppercase tracking-widest"
+            className="mb-8 p-4 bg-rose-500/20 border border-rose-500/30 rounded-2xl text-rose-300 text-[10px] font-black uppercase tracking-widest leading-relaxed"
           >
-            {error}
+            ❌ {error}
           </motion.div>
         )}
+
+        <div className="mb-6 p-3 bg-white/5 rounded-2xl border border-white/5 text-[9px] font-black uppercase tracking-widest text-white/40 leading-relaxed">
+          Pilih metode masuk di bawah ini <br/> atau gunakan <span className="text-white/60">admin / admin</span>
+        </div>
+
+        <button 
+          onClick={handleGoogleLogin}
+          disabled={loading}
+          className="w-full py-4 bg-white/10 hover:bg-white/20 text-white rounded-[24px] border border-white/20 font-bold flex items-center justify-center gap-3 transition-all mb-4 disabled:opacity-50"
+        >
+          <Chrome size={20} className="text-blue-400" />
+          Masuk dengan Google
+        </button>
+
+        <div className="flex items-center gap-4 mb-6">
+          <div className="h-px bg-white/10 flex-1" />
+          <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">Atau</span>
+          <div className="h-px bg-white/10 flex-1" />
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="relative group/input">

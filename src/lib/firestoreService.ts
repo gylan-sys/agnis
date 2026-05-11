@@ -1,4 +1,12 @@
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import firebaseConfig from '../../firebase-applet-config.json';
 import { OperationType, FirestoreErrorInfo } from '../types';
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
 
 // Mock Auth State for local migration
 let currentUser: any = JSON.parse(localStorage.getItem('user') || 'null');
@@ -71,6 +79,27 @@ export const authService = {
     if (data.loginBackground) localStorage.setItem('lastLoginBg', data.loginBackground);
     return data;
   },
+  async loginWithGoogle() {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const idToken = await result.user.getIdToken();
+      
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+        credentials: 'include'
+      });
+      
+      currentUser = await safeJson(res);
+      localStorage.setItem('user', JSON.stringify(currentUser));
+      if (currentUser.loginBackground) localStorage.setItem('lastLoginBg', currentUser.loginBackground);
+      return currentUser;
+    } catch (e: any) {
+      console.error("Google Auth Error:", e);
+      throw e;
+    }
+  },
   async updateSettings(settings: { loginBackground?: string, appBackground?: string, displayName?: string }) {
     const res = await fetch('/api/auth/settings', {
       method: 'PATCH',
@@ -86,6 +115,29 @@ export const authService = {
   onAuthStateChanged(callback: (user: any) => void) {
     callback(currentUser);
     return () => {};
+  }
+};
+
+export const adminService = {
+  async getUsers() {
+    const res = await fetch('/api/admin/users', { credentials: 'include' });
+    return await safeJson(res);
+  },
+  async saveUser(user: any) {
+    const res = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(user),
+      credentials: 'include'
+    });
+    return await safeJson(res);
+  },
+  async deleteUser(userId: string) {
+    const res = await fetch(`/api/admin/users/${userId}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+    return await safeJson(res);
   }
 };
 
