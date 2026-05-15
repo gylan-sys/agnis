@@ -133,7 +133,7 @@ export default function Chat({ householdId }: { householdId: string }) {
 
               return (
                 <motion.div 
-                  key={msg.id}
+                  key={msg.id || `msg-${idx}`}
                   initial={{ opacity: 0, scale: 0.8, y: 20 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   transition={{ type: "spring", damping: 20, stiffness: 200 }}

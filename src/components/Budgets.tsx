@@ -126,7 +126,7 @@ export default function Budgets({ householdId }: { householdId: string }) {
         )}
       </AnimatePresence>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {budgets.map((budget, idx) => {
           const spent = getSpent(budget.category);
           const percent = Math.min((spent / budget.amount) * 100, 100);
@@ -135,7 +135,7 @@ export default function Budgets({ householdId }: { householdId: string }) {
 
           return (
             <motion.div 
-              key={budget.id}
+              key={budget.id || `budget-${idx}`}
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: idx * 0.1 }}

@@ -48,11 +48,16 @@ async function apiFetch(url: string, options: RequestInit = {}) {
     headers.set('Authorization', `Bearer ${currentUser.token}`);
   }
   
-  return fetch(url, {
-    ...options,
-    headers,
-    credentials: 'include'
-  });
+  try {
+    return await fetch(url, {
+      ...options,
+      headers,
+      credentials: 'include'
+    });
+  } catch (e: any) {
+    console.error(`Network error reaching ${url}:`, e);
+    throw new Error(`Koneksi Gagal: Tidak dapat menghubungi server (${url}). Periksa koneksi internet atau status server.`);
+  }
 }
 
 export const authService = {

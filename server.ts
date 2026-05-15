@@ -4,6 +4,7 @@ import path from "path";
 import Database from "better-sqlite3";
 import cookieParser from "cookie-parser";
 import { SignJWT, jwtVerify } from "jose";
+import cors from "cors";
 
 import fs from "fs";
 
@@ -184,8 +185,11 @@ migrate();
 async function startServer() {
   try {
     const app = express();
+    
+    // Cloudflare/Proxy Support
+    app.set('trust proxy', 1);
 
-    // Log port configuration
+    // Initial Database and Server Setup
     console.log(`Configuring server to listen on port: ${PORT}`);
 
   // Log all requests
@@ -194,8 +198,14 @@ async function startServer() {
     next();
   });
 
-  app.use(express.json({ limit: '50mb' }));
-  app.use(cookieParser());
+    app.use(express.json({ limit: '50mb' }));
+    app.use(cookieParser());
+    app.use(cors({
+      origin: true, // Reflect request origin
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
+    }));
+    app.options('*', cors() as any);
 
   // Health check for API
   app.get("/api/ping", (req, res) => {
@@ -543,8 +553,22 @@ async function startServer() {
     if (!fs.existsSync(distPath)) {
       console.error("FATAL: 'dist' folder not found! Build the frontend using 'npm run build' first.");
     }
-    app.use(express.static(distPath));
+    
+    // Serve static files but exclude the server bundle itself
+    app.use(express.static(distPath, {
+      index: false,
+      setHeaders: (res, path) => {
+        if (path.endsWith('.cjs') || path.endsWith('.map')) {
+          res.status(403).end();
+        }
+      }
+    }));
+
     app.get('*', (req, res) => {
+      // Don't serve HTML for API routes that missed
+      if (req.url.startsWith('/api/')) {
+        return res.status(404).json({ error: 'API endpoint not found' });
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
