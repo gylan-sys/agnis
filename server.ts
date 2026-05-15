@@ -129,23 +129,60 @@ db.exec(`
     appBackground TEXT
   );
 
+  -- Initial setup
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE,
+    displayName TEXT,
+    email TEXT UNIQUE,
+    password TEXT,
+    role TEXT DEFAULT 'user',
+    loginBackground TEXT,
+    appBackground TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS _migrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE,
+    appliedAt TEXT
+  );
+
   INSERT OR IGNORE INTO users (id, username, displayName, password, role) 
   VALUES ('u_admin', 'admin', 'Administrator', 'admin', 'admin');
-
-  -- Migration for existing users
-  PRAGMA table_info(users);
 `);
 
-// Explicit migration for sqlite
-try {
-  db.prepare("ALTER TABLE users ADD COLUMN email TEXT UNIQUE").run();
-} catch (e) {}
-try {
-  db.prepare("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'").run();
-} catch (e) {}
-try {
-  db.prepare("UPDATE users SET role = 'admin' WHERE id = 'u_admin' OR username = 'admin'").run();
-} catch (e) {}
+// Robust Migration Helper
+function migrate() {
+  const columnExists = (table: string, column: string) => {
+    const info = db.prepare(`PRAGMA table_info(${table})`).all();
+    return info.some((c: any) => c.name === column);
+  };
+
+  const runMigration = (name: string, sql: string) => {
+    const alreadyApplied = db.prepare("SELECT 1 FROM _migrations WHERE name = ?").get(name);
+    if (!alreadyApplied) {
+      console.log(`[MIGRATION] Applying: ${name}`);
+      try {
+        db.prepare(sql).run();
+        db.prepare("INSERT INTO _migrations (name, appliedAt) VALUES (?, ?)").run(name, new Date().toISOString());
+      } catch (e: any) {
+        if (e.message.includes("duplicate column name") || e.message.includes("already exists")) {
+          console.warn(`[MIGRATION] Column already exists for ${name}, marking as applied.`);
+          db.prepare("INSERT OR IGNORE INTO _migrations (name, appliedAt) VALUES (?, ?)").run(name, new Date().toISOString());
+        } else {
+          console.error(`[MIGRATION] Failed to apply ${name}:`, e.message);
+        }
+      }
+    }
+  };
+
+  // Define migrations
+  runMigration("add_email_to_users", "ALTER TABLE users ADD COLUMN email TEXT UNIQUE");
+  runMigration("add_role_to_users", "ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
+  runMigration("ensure_admin_role", "UPDATE users SET role = 'admin' WHERE id = 'u_admin' OR username = 'admin'");
+}
+
+migrate();
 
 async function startServer() {
   try {
