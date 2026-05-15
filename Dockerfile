@@ -1,9 +1,9 @@
-# Build stage
-FROM node:22-slim AS builder
+# --- BUILD STAGE ---
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies for native modules (better-sqlite3)
+# Install build tools for native modules (better-sqlite3)
 RUN apt-get update && apt-get install -y \
     python3 \
     make \
@@ -16,13 +16,12 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-# Production stage
-FROM node:22-slim
+# --- PRODUCTION STAGE ---
+FROM node:20-slim AS runner
 
 WORKDIR /app
-ENV NODE_ENV=production
 
-# Install production build dependencies for native modules
+# We still need build tools to install production native modules
 RUN apt-get update && apt-get install -y \
     python3 \
     make \
@@ -30,16 +29,26 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
+# Install production dependencies only
 RUN npm install --omit=dev
 
-# Clean up build dependencies
-RUN apt-get purge -y python3 make g++ && apt-get autoremove -y
-
+# Copy compiled artifacts from builder
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/server.ts ./
 
-# Expose port
+# Create persistent data directory
+RUN mkdir -p /app/data && chown -R node:node /app/data
+
+# Environment variables
+ENV NODE_ENV=production
+ENV DATA_DIR=/app/data
+ENV PORT=3000
+
 EXPOSE 3000
 
-# Start the application
-CMD ["npm", "start"]
+# Cleanup build tools in production to save space
+RUN apt-get purge -y python3 make g++ && apt-get autoremove -y
+
+USER node
+
+# Use node directly for the start command (the build script compiled server.ts to dist/server.cjs)
+CMD ["node", "dist/server.cjs"]

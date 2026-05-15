@@ -1,0 +1,32 @@
+services:
+  agnis-app:
+    container_name: agnis-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3060:3000"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DATA_DIR=/app/data
+      - PORT=3000
+    # Best practice: Limit resources to prevent a single container from crashing the host
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+    # Compatible with Cloudflare/Reverse Proxy
+    # Ensures security headers can be trusted if X-Forwarded-For is set
+    networks:
+      - agnis-network
+
+networks:
+  agnis-network:
+    driver: bridge
