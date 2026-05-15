@@ -7,18 +7,6 @@ import { SignJWT, jwtVerify } from "jose";
 
 import fs from "fs";
 
-import * as admin from "firebase-admin";
-
-// Initialize Firebase Admin
-try {
-  if (admin.apps.length === 0) {
-    // We attempt default init which works in some cloud envs, or fails gracefully
-    admin.initializeApp();
-  }
-} catch (e: any) {
-  console.warn("Firebase Admin failed to init:", e.message);
-}
-
 const PORT = 3000;
 const DATA_DIR = path.join(process.cwd(), "data");
 if (!fs.existsSync(DATA_DIR)) {
@@ -182,60 +170,31 @@ async function startServer() {
 
   // Auth Middleware
   const authMiddleware = async (req: any, res: any, next: any) => {
-    const token = req.cookies.token;
-    if (!token) return res.status(401).json({ error: "Unauthorized" });
+    let token = req.cookies.token;
+    
+    // Fallback to Authorization header
+    if (!token && req.headers.authorization) {
+      const parts = req.headers.authorization.split(' ');
+      if (parts.length === 2 && parts[0] === 'Bearer') {
+        token = parts[1];
+      }
+    }
+
+    if (!token) {
+      console.warn(`[AUTH] No token found in cookies or headers for ${req.url}`);
+      return res.status(401).json({ error: "Unauthorized" });
+    }
     try {
       const { payload } = await jwtVerify(token, SECRET);
       req.user = payload;
       next();
-    } catch (e) {
+    } catch (e: any) {
+      console.warn(`[AUTH] Invalid token for ${req.url}:`, e.message);
       res.status(401).json({ error: "Invalid token" });
     }
   };
 
   // --- API Routes ---
-
-  // Auth
-  app.post("/api/auth/google", async (req: any, res: any) => {
-    try {
-      const { idToken } = req.body;
-      const decodedToken = await admin.auth().verifyIdToken(idToken);
-      const { uid, email, name, picture } = decodedToken;
-
-      let user = db.prepare("SELECT * FROM users WHERE id = ? OR email = ?").get(uid, email) as any;
-      
-      const isAdminEmail = email === 'gkrismantara@gmail.com';
-
-      if (!user) {
-        db.prepare("INSERT INTO users (id, username, displayName, email, role) VALUES (?, ?, ?, ?, ?)")
-          .run(uid, email?.split('@')[0] || uid, name || "User", email, isAdminEmail ? 'admin' : 'user');
-        user = { id: uid, username: email?.split('@')[0], displayName: name, email, role: isAdminEmail ? 'admin' : 'user' };
-      } else {
-        // Update user if needed (e.g. they were local but now use Google)
-        db.prepare("UPDATE users SET email = ?, role = CASE WHEN ? = 1 THEN 'admin' ELSE role END WHERE id = ?")
-          .run(email, isAdminEmail ? 1 : 0, user.id);
-        user = db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
-      }
-
-      const { password: _, ...userWithoutPassword } = user;
-      const token = await new SignJWT({ ...userWithoutPassword })
-        .setProtectedHeader({ alg: "HS256" })
-        .setExpirationTime("30d")
-        .sign(SECRET);
-
-      res.cookie("token", token, { 
-        httpOnly: true, 
-        secure: req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 30 * 24 * 60 * 60 * 1000
-      });
-      res.json(userWithoutPassword);
-    } catch (e: any) {
-      console.error("Google login error:", e);
-      res.status(500).json({ error: e.message });
-    }
-  });
 
   app.post("/api/auth/login", async (req, res) => {
     try {
@@ -247,8 +206,8 @@ async function startServer() {
       if (!user) {
         // Auto-register for now (simple setup)
         const id = "u_" + Math.random().toString(36).substring(7);
-        db.prepare("INSERT INTO users (id, username, displayName, password) VALUES (?, ?, ?, ?)")
-          .run(id, username, username, password);
+        db.prepare("INSERT INTO users (id, username, displayName, password, role) VALUES (?, ?, ?, ?, ?)")
+          .run(id, username, username, password, 'user');
         user = { id, username, displayName: username, role: 'user' };
       } else {
         if (user.password !== password) {
@@ -262,14 +221,21 @@ async function startServer() {
         .setExpirationTime("30d")
         .sign(SECRET);
       
+      const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production';
+      
+      console.log(`[AUTH] Setting token cookie for ${username}. isHttps: ${isHttps}`);
+      
       res.cookie("token", token, { 
         httpOnly: true, 
-        secure: req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        secure: isHttps,
+        sameSite: isHttps ? 'none' : 'lax',
         path: '/',
         maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
       });
-      res.json(userWithoutPassword);
+      res.json({
+        ...userWithoutPassword,
+        token // Send token in JSON so frontend can store in localStorage
+      });
     } catch (e: any) {
       console.error("Login error:", e);
       res.status(500).json({ error: "Internal Server Error: " + e.message });

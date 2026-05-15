@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LogIn, Image as ImageIcon, Chrome, Sparkles } from 'lucide-react';
+import { LogIn, Image as ImageIcon, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { animate, stagger } from 'animejs';
 import { authService } from '../lib/firestoreService';
@@ -87,19 +87,6 @@ export default function Login({ onLogin, background }: { onLogin: (credentials: 
     }
   };
 
-  const handleGoogleLogin = async () => {
-    setError('');
-    setLoading(true);
-    try {
-      const u = await authService.loginWithGoogle();
-      onLogin(u);
-    } catch (err: any) {
-      setError(err.message || 'Login Google gagal.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -167,26 +154,7 @@ export default function Login({ onLogin, background }: { onLogin: (credentials: 
           </motion.div>
         )}
 
-        <div className="login-stagger-item mb-8">
-           <button 
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            className="w-full py-4 bg-white/10 hover:bg-white/20 text-white rounded-[24px] border border-white/20 font-bold flex items-center justify-center gap-3 transition-all mb-4 disabled:opacity-50 group/google"
-          >
-            <div className="bg-white p-1 rounded-lg">
-              <Chrome size={18} className="text-blue-600" />
-            </div>
-            <span className="text-sm font-black uppercase tracking-widest">Masuk dengan Google</span>
-          </button>
-
-          <div className="flex items-center gap-4 mb-6">
-            <div className="h-px bg-white/5 flex-1" />
-            <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">Atau Username</span>
-            <div className="h-px bg-white/5 flex-1" />
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4 login-stagger-item">
+        <form onSubmit={handleSubmit} className="space-y-4 login-stagger-item mt-4">
           <div className="relative group/input">
             <input 
               type="text" 
