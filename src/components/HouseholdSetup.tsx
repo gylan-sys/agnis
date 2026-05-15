@@ -35,9 +35,9 @@ export default function HouseholdSetup({ userId, onSelect }: { userId: string, o
         <h1 className="text-3xl font-semibold text-gray-900 mb-8 tracking-tight">Pilih Rumah Tangga</h1>
         
         <div className="grid gap-4 mb-8">
-          {households.map(h => (
+          {households.map((h, idx) => (
             <button 
-              key={h.id}
+              key={h.id || `household-${idx}`}
               onClick={() => onSelect(h.id)}
               className="p-6 bg-white rounded-2xl border border-gray-100 flex items-center gap-4 hover:border-gray-900 transition-all text-left group shadow-sm active:scale-[0.98]"
             >

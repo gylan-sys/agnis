@@ -176,8 +176,8 @@ export default function AdminUserManagement() {
                 <tr>
                   <td colSpan={4} className="px-8 py-12 text-center text-gray-400 italic">Belum ada user terdaftar selain admin utama.</td>
                 </tr>
-              ) : users.map(u => (
-                <tr key={u.id} className="group hover:bg-gray-50 transition-colors">
+              ) : users.map((u, idx) => (
+                <tr key={u.id || `user-${idx}`} className="group hover:bg-gray-50 transition-colors">
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 bg-gray-100 rounded-2xl flex items-center justify-center font-bold text-gray-400 uppercase tracking-tighter">

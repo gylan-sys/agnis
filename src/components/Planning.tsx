@@ -202,14 +202,14 @@ export default function Planning({ householdId }: { householdId: string }) {
       </AnimatePresence>
 
       <div className="space-y-8">
-        {Object.entries(groupedItems).map(([group, groupItems]) => {
+        {Object.entries(groupedItems).map(([group, groupItems], gIdx) => {
           const items = groupItems as PlanningItem[];
           const boughtItems = items.filter(i => i.isBought);
           const progress = (boughtItems.length / items.length) * 100;
 
           return (
             <motion.div 
-              key={group} 
+              key={`group-${group || gIdx}`} 
               layout
               className="bg-white rounded-[40px] border border-gray-50 shadow-sm overflow-hidden"
             >
@@ -260,7 +260,7 @@ export default function Planning({ householdId }: { householdId: string }) {
                     <div className="p-4 sm:p-6 space-y-2">
                        {items.map((item, idx) => (
                          <motion.div 
-                           key={item.id}
+                           key={item.id || `item-${idx}`}
                            initial={{ x: -10, opacity: 0 }}
                            animate={{ x: 0, opacity: 1 }}
                            transition={{ delay: idx * 0.05 }}

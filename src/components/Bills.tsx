@@ -125,7 +125,7 @@ export default function Bills({ householdId }: { householdId: string }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {bills.map((bill, idx) => (
           <motion.div 
-            key={bill.id}
+            key={bill.id || `bill-${idx}`}
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: idx * 0.1 }}

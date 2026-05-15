@@ -209,7 +209,7 @@ export default function Transactions({ householdId }: { householdId: string }) {
       <div className="space-y-4">
         {transactions.map((tx, idx) => (
           <motion.div 
-            key={tx.id}
+            key={tx.id || `tx-row-${idx}`}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.05 }}

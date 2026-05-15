@@ -192,9 +192,9 @@ export default function Gallery({ householdId }: { householdId: string }) {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           <AnimatePresence mode="popLayout">
-            {items.map((item) => (
+            {items.map((item, idx) => (
               <motion.div
-                key={item.id}
+                key={item.id || `gallery-item-${idx}`}
                 layout
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
