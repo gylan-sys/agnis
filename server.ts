@@ -201,11 +201,17 @@ async function startServer() {
     app.use(express.json({ limit: '50mb' }));
     app.use(cookieParser());
     app.use(cors({
-      origin: true, // Reflect request origin
+      origin: true,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
     }));
-    app.options('*', cors() as any);
+    app.options('*', (req, res) => {
+      res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.header('Access-Control-Allow-Credentials', 'true');
+      res.sendStatus(200);
+    });
 
   // Health check for API
   app.get("/api/ping", (req, res) => {
@@ -537,21 +543,38 @@ async function startServer() {
 
   // 404 for API
   app.all("/api/*", (req: any, res) => {
-    console.warn(`404 API Route: ${req.method} ${req.url}`);
-    res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
+    console.warn(`[404] API Route Not Found: ${req.method} ${req.url}`);
+    res.status(404).json({ 
+      error: "API endpoint tidak ditemukan",
+      path: req.url,
+      method: req.method
+    });
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  // Global Error Handler for API
+  app.use("/api", (err: any, req: any, res: any, next: any) => {
+    console.error("[SERVER ERROR] API:", err);
+    res.status(err.status || 500).json({ 
+      error: "Terjadi kesalahan pada server",
+      details: err.message
+    });
+  });
+
+  // Vite middleware or Static files
+  const isProduction = process.env.NODE_ENV === "production" || fs.existsSync(path.join(process.cwd(), 'dist'));
+  
+  if (!isProduction) {
+    console.log("[SERVER] Starting in DEVELOPMENT mode with Vite middleware...");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
+    console.log("[SERVER] Starting in PRODUCTION mode serving static files...");
     const distPath = path.join(process.cwd(), 'dist');
     if (!fs.existsSync(distPath)) {
-      console.error("FATAL: 'dist' folder not found! Build the frontend using 'npm run build' first.");
+      console.warn("WARNING: 'dist' folder not found even in production mode!");
     }
     
     // Serve static files but exclude the server bundle itself
@@ -565,11 +588,17 @@ async function startServer() {
     }));
 
     app.get('*', (req, res) => {
-      // Don't serve HTML for API routes that missed
+      // Don't serve HTML for API routes that missed (this is redundant but good for safety)
       if (req.url.startsWith('/api/')) {
-        return res.status(404).json({ error: 'API endpoint not found' });
+        return res.status(404).json({ error: 'API endpoint not found (fallback)' });
       }
-      res.sendFile(path.join(distPath, 'index.html'));
+      
+      const indexPath = path.join(distPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send("Frontend build not found. Please run 'npm run build' first.");
+      }
     });
   }
 

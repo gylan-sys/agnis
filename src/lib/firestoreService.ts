@@ -13,6 +13,12 @@ let currentUser: any = JSON.parse(localStorage.getItem('user') || 'null');
 // Safe JSON parsing helper
 async function safeJson(res: Response) {
   const text = await res.text();
+  
+  // Debug log for HTML responses in development
+  if (text.toLowerCase().includes("<html") || text.toLowerCase().includes("<!doctype")) {
+    console.error(`[DEBUG] Received HTML instead of JSON from ${res.url}. Status: ${res.status}`);
+  }
+
   if (!res.ok) {
     if (res.status === 401) {
       currentUser = null;
@@ -24,20 +30,22 @@ async function safeJson(res: Response) {
     } catch {
       const lowerText = text.toLowerCase();
       if (lowerText.includes("rate exceeded")) throw new Error("Terlalu banyak permintaan. Silakan tunggu sebentar.");
+      
       if (lowerText.includes("<!doctype") || lowerText.includes("<html")) {
-        throw new Error(`Server Error (${res.status}): API mengembalikan HTML. Pastikan server/proxy terkonfigurasi dengan benar.`);
+        const errorMsg = `Server/Proxy Error (${res.status}): API mengembalikan halaman HTML. Ini biasanya terjadi karena URL API tidak ditemukan atau proxy (Nginx/Cloudflare) belum terkonfigurasi untuk mem-forward request ke backend Node.js.`;
+        throw new Error(errorMsg);
       }
       throw new Error(text.substring(0, 100) || `Error ${res.status}`);
     }
   }
   try {
     return JSON.parse(text);
-  } catch {
+  } catch (e) {
     const lowerText = text.toLowerCase();
     if (lowerText.includes("<!doctype") || lowerText.includes("<html")) {
-      throw new Error("Server mengembalikan halaman HTML (SPA fallback). Pastikan URL API benar.");
+      throw new Error("Server mengembalikan halaman HTML (SPA fallback) pada request sukses. Pastikan URL API benar dan tidak tertabrak route frontend.");
     }
-    throw new Error("Respons server tidak valid (bukan JSON)");
+    throw new Error(`Respons server tidak valid (bukan JSON). Status: ${res.status}`);
   }
 }
 
