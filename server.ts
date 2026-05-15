@@ -129,33 +129,22 @@ db.exec(`
     appBackground TEXT
   );
 
-  -- Initial setup
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    username TEXT UNIQUE,
-    displayName TEXT,
-    email TEXT UNIQUE,
-    password TEXT,
-    role TEXT DEFAULT 'user',
-    loginBackground TEXT,
-    appBackground TEXT
-  );
-
   CREATE TABLE IF NOT EXISTS _migrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE,
     appliedAt TEXT
   );
-
-  INSERT OR IGNORE INTO users (id, username, displayName, password, role) 
-  VALUES ('u_admin', 'admin', 'Administrator', 'admin', 'admin');
 `);
 
 // Robust Migration Helper
 function migrate() {
   const columnExists = (table: string, column: string) => {
-    const info = db.prepare(`PRAGMA table_info(${table})`).all();
-    return info.some((c: any) => c.name === column);
+    try {
+        const info = db.prepare(`PRAGMA table_info(${table})`).all();
+        return info.some((c: any) => c.name === column);
+    } catch (e) {
+        return false;
+    }
   };
 
   const runMigration = (name: string, sql: string) => {
@@ -179,7 +168,15 @@ function migrate() {
   // Define migrations
   runMigration("add_email_to_users", "ALTER TABLE users ADD COLUMN email TEXT UNIQUE");
   runMigration("add_role_to_users", "ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
-  runMigration("ensure_admin_role", "UPDATE users SET role = 'admin' WHERE id = 'u_admin' OR username = 'admin'");
+  
+  // Post-migration seeding
+  console.log("[DATABASE] Ensuring default admin user exists...");
+  db.prepare(`
+    INSERT OR IGNORE INTO users (id, username, displayName, password, role) 
+    VALUES ('u_admin', 'admin', 'Administrator', 'admin', 'admin')
+  `).run();
+  
+  db.prepare("UPDATE users SET role = 'admin' WHERE id = 'u_admin' OR username = 'admin'").run();
 }
 
 migrate();

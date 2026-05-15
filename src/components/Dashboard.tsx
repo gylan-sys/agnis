@@ -206,7 +206,7 @@ export default function Dashboard({ householdId, onNavigate }: { householdId: st
                 </h3>
                 <div className="space-y-4">
                   {sortedCategories.slice(0, 4).map(([cat, amt]: any, idx) => (
-                    <div key={cat} className="space-y-1.5">
+                    <div key={`cat-${cat || idx}`} className="space-y-1.5">
                       <div className="flex justify-between text-xs font-bold">
                         <span className="text-gray-500 uppercase tracking-widest">{cat}</span>
                         <span className="text-gray-900">Rp {amt.toLocaleString('id-ID')}</span>
@@ -236,7 +236,7 @@ export default function Dashboard({ householdId, onNavigate }: { householdId: st
              <div className="space-y-4">
                {transactions.slice(0, 5).map((tx, idx) => (
                  <motion.div 
-                   key={tx.id}
+                   key={tx.id || `tx-${idx}`}
                    initial={{ x: -20, opacity: 0 }}
                    animate={{ x: 0, opacity: 1 }}
                    transition={{ delay: idx * 0.05 }}
@@ -270,7 +270,7 @@ export default function Dashboard({ householdId, onNavigate }: { householdId: st
             <div className="space-y-6">
               {members.map((member, idx) => (
                 <motion.div 
-                  key={member.id}
+                  key={member.id || `member-${idx}`}
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: idx * 0.1 }}
@@ -306,7 +306,7 @@ export default function Dashboard({ householdId, onNavigate }: { householdId: st
               <div className="space-y-4">
                 <div className="flex -space-x-4 overflow-hidden">
                   {galleryItems.map((item, i) => (
-                     <div key={i} className="w-20 h-20 rounded-2xl bg-gray-50 border-2 border-white shadow-sm overflow-hidden shrink-0">
+                     <div key={item.id || `gallery-${i}`} className="w-20 h-20 rounded-2xl bg-gray-50 border-2 border-white shadow-sm overflow-hidden shrink-0">
                         {item.type === 'image' ? (
                           <img src={item.url} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
                         ) : (
